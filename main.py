@@ -22,14 +22,19 @@ Rules:
 - Mark exactly one as best_bet true.
 - Confidence must be 1 to 5.
 - Do not invent sportsbook odds. Leave odds blank if unavailable.
-- Return ONLY valid JSON array.
+- Return ONLY a raw JSON array.
+- Do not include markdown or commentary.
 
 Fields:
 date, game, pick, bet_type, betmgm, draftkings, fanatics, polymarketus, kalshi, best_odds, best_source, confidence, best_bet, rationale
 """
 
-        text = response.output_text.strip()
+    response = client.responses.create(
+        model="gpt-4.1-mini",
+        input=prompt
+    )
 
+    text = response.output_text.strip()
     if text.startswith("```"):
         text = text.replace("```json", "").replace("```", "").strip()
 
