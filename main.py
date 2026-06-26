@@ -28,12 +28,12 @@ Fields:
 date, game, pick, bet_type, betmgm, draftkings, fanatics, polymarketus, kalshi, best_odds, best_source, confidence, best_bet, rationale
 """
 
-    response = client.responses.create(
-        model="gpt-4.1-mini",
-        input=prompt
-    )
+        text = response.output_text.strip()
 
-    return json.loads(response.output_text.strip())
+    if text.startswith("```"):
+        text = text.replace("```json", "").replace("```", "").strip()
+
+    return json.loads(text)
 
 def main():
     picks = generate_picks()
