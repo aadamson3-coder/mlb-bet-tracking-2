@@ -24,3 +24,4 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           APPS_SCRIPT_URL: ${{ secrets.APPS_SCRIPT_URL }}
           APPS_SCRIPT_TOKEN: ${{ secrets.APPS_SCRIPT_TOKEN }}
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
