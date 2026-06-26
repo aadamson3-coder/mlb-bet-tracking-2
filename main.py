@@ -1,63 +1,116 @@
-import os, json, requests
+import os, requests
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from openai import OpenAI
 
 APPS_SCRIPT_URL = os.environ["APPS_SCRIPT_URL"]
 APPS_SCRIPT_TOKEN = os.environ["APPS_SCRIPT_TOKEN"]
-OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
+ODDS_API_KEY = os.environ["ODDS_API_KEY"]
 
-def get_today_games():
-    today = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
-    url = f"https://statsapi.mlb.com/api/v1/schedule?sportId=1&date={today}"
-    data = requests.get(url, timeout=20).json()
+BOOKS = ["draftkings", "betmgm", "fanduel", "fanatics"]
+REGIONS = "us"
+MARKETS = "h2h,spreads,totals"
 
-    games = []
-    for date in data.get("dates", []):
-        for game in date.get("games", []):
-            away = game["teams"]["away"]["team"]["name"]
-            home = game["teams"]["home"]["team"]["name"]
-            games.append(f"{away} @ {home}")
-    return today, games
+def american_to_implied(odds):
+    odds = int(odds)
+    if odds > 0:
+        return 100 / (odds + 100)
+    return abs(odds) / (abs(odds) + 100)
 
-def generate_picks():
-    today, games = get_today_games()
-    client = OpenAI(api_key=OPENAI_API_KEY)
+def get_odds():
+    url = "https://api.the-odds-api.com/v4/sports/baseball_mlb/odds"
+    params = {
+        "apiKey": ODDS_API_KEY,
+        "regions": REGIONS,
+        "markets": MARKETS,
+        "oddsFormat": "american",
+        "bookmakers": ",".join(BOOKS)
+    }
+    r = requests.get(url, params=params, timeout=30)
+    r.raise_for_status()
+    return r.json()
 
-    prompt = f"""
-Today is {today}. These are the ONLY MLB games available today:
+def score_pick(event, market_key, outcome, book):
+    odds = outcome.get("price")
+    if odds is None:
+        return None
 
-{json.dumps(games, indent=2)}
+    implied = american_to_implied(odds)
 
-Generate exactly 5 MLB betting picks.
+    # Deterministic placeholder model.
+    # Phase 2 will replace this with pitcher/team/bullpen features.
+    model_prob = max(0.40, min(0.62, implied + 0.035))
+    edge = model_prob - implied
 
-Rules:
-- Pick ONLY from the listed games.
-- No player props.
-- Only Moneyline, Run Line, or Total.
-- Mark exactly one as best_bet true.
-- Confidence must be 1 to 5.
-- Do not invent sportsbook odds.
-- Leave odds blank if unavailable.
-- Return ONLY a raw JSON array.
+    confidence = round(2.5 + edge * 50, 1)
+    confidence = max(1, min(5, confidence))
 
-Fields:
-date, game, pick, bet_type, odds, confidence, stake_units, result, profit_loss, notes
-"""
+    home = event["home_team"]
+    away = event["away_team"]
+    game = f"{away} @ {home}"
 
-    response = client.responses.create(
-        model="gpt-4.1-mini",
-        input=prompt
-    )
+    bet_type = {
+        "h2h": "Moneyline",
+        "spreads": "Run Line",
+        "totals": "Total"
+    }[market_key]
 
-    text = response.output_text.strip()
-    if text.startswith("```"):
-        text = text.replace("```json", "").replace("```", "").strip()
+    pick = outcome["name"]
+    if market_key == "spreads":
+        pick = f'{outcome["name"]} {outcome.get("point", "")}'
+    elif market_key == "totals":
+        pick = f'{outcome["name"]} {outcome.get("point", "")}'
 
-    return json.loads(text)
+    return {
+        "date": datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d"),
+        "game": game,
+        "pick": pick,
+        "bet_type": bet_type,
+        "sportsbook": book,
+        "odds": odds,
+        "model_probability": round(model_prob, 3),
+        "implied_probability": round(implied, 3),
+        "edge": round(edge, 3),
+        "confidence": confidence,
+        "best_bet": False,
+        "rationale": f"Ranked by deterministic edge model using live market odds from {book}."
+    }
+
+def build_picks():
+    events = get_odds()
+    candidates = []
+
+    for event in events:
+        for bookmaker in event.get("bookmakers", []):
+            book = bookmaker["key"]
+            for market in bookmaker.get("markets", []):
+                if market["key"] not in ["h2h", "spreads", "totals"]:
+                    continue
+                for outcome in market.get("outcomes", []):
+                    scored = score_pick(event, market["key"], outcome, book)
+                    if scored:
+                        candidates.append(scored)
+
+    candidates.sort(key=lambda x: x["edge"], reverse=True)
+
+    picks = []
+    used_games = set()
+
+    for c in candidates:
+        if c["game"] in used_games:
+            continue
+        picks.append(c)
+        used_games.add(c["game"])
+        if len(picks) == 5:
+            break
+
+    if picks:
+        picks[0]["best_bet"] = True
+        picks[0]["rationale"] = "Best Bet: highest model edge from today’s live odds board."
+
+    return picks
 
 def main():
-    picks = generate_picks()
+    picks = build_picks()
 
     res = requests.post(
         APPS_SCRIPT_URL,
