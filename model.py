@@ -7,10 +7,6 @@ from utils import (
 )
 
 
-# -----------------------------
-# Model Weights
-# -----------------------------
-
 PITCHING_WEIGHT = 0.35
 TEAM_FORM_WEIGHT = 0.25
 BULLPEN_WEIGHT = 0.20
@@ -18,21 +14,30 @@ HOME_FIELD_WEIGHT = 0.05
 MARKET_WEIGHT = 0.15
 
 
-# -----------------------------
-# Feature Scoring Helpers
-# -----------------------------
+def safe_float(value, default):
+    try:
+        if value in [None, "", "-.--"]:
+            return default
+        return float(value)
+    except Exception:
+        return default
+
 
 def score_pitching(home_pitcher, away_pitcher):
     score = 0.50
 
-    if home_pitcher["era"] < away_pitcher["era"]:
-        score += 0.05
+    home_era = safe_float(home_pitcher.get("era"), 4.50)
+    away_era = safe_float(away_pitcher.get("era"), 4.50)
 
-    if home_pitcher["whip"] < away_pitcher["whip"]:
-        score += 0.04
+    home_whip = safe_float(home_pitcher.get("whip"), 1.35)
+    away_whip = safe_float(away_pitcher.get("whip"), 1.35)
 
-    if home_pitcher["k9"] > away_pitcher["k9"]:
-        score += 0.03
+    home_k9 = safe_float(home_pitcher.get("k9"), 8.0)
+    away_k9 = safe_float(away_pitcher.get("k9"), 8.0)
+
+    score += clamp((away_era - home_era) * 0.018, -0.06, 0.06)
+    score += clamp((away_whip - home_whip) * 0.08, -0.04, 0.04)
+    score += clamp((home_k9 - away_k9) * 0.008, -0.03, 0.03)
 
     return clamp(score, 0.35, 0.65)
 
@@ -40,12 +45,18 @@ def score_pitching(home_pitcher, away_pitcher):
 def score_team_form(home_form, away_form):
     score = 0.50
 
-    score += (home_form["wins_last10"] - away_form["wins_last10"]) * 0.01
+    home_wins = safe_float(home_form.get("wins_last10"), 5)
+    away_wins = safe_float(away_form.get("wins_last10"), 5)
 
-    score += (
-        home_form["runs_per_game"]
-        - away_form["runs_per_game"]
-    ) * 0.01
+    home_rpg = safe_float(home_form.get("runs_per_game"), 4.5)
+    away_rpg = safe_float(away_form.get("runs_per_game"), 4.5)
+
+    home_ra = safe_float(home_form.get("runs_allowed"), 4.5)
+    away_ra = safe_float(away_form.get("runs_allowed"), 4.5)
+
+    score += clamp((home_wins - away_wins) * 0.012, -0.06, 0.06)
+    score += clamp((home_rpg - away_rpg) * 0.010, -0.04, 0.04)
+    score += clamp((away_ra - home_ra) * 0.010, -0.04, 0.04)
 
     return clamp(score, 0.35, 0.65)
 
@@ -53,22 +64,20 @@ def score_team_form(home_form, away_form):
 def score_bullpen(home_pen, away_pen):
     score = 0.50
 
-    if home_pen["bullpen_era"] < away_pen["bullpen_era"]:
-        score += 0.03
+    home_era = safe_float(home_pen.get("bullpen_era"), 3.90)
+    away_era = safe_float(away_pen.get("bullpen_era"), 3.90)
 
-    if home_pen["bullpen_usage"] < away_pen["bullpen_usage"]:
-        score += 0.02
+    home_usage = safe_float(home_pen.get("bullpen_usage"), 1)
+    away_usage = safe_float(away_pen.get("bullpen_usage"), 1)
+
+    score += clamp((away_era - home_era) * 0.012, -0.04, 0.04)
+    score += clamp((away_usage - home_usage) * 0.020, -0.04, 0.04)
 
     return clamp(score, 0.35, 0.65)
 
 
-# -----------------------------
-# Overall Game Model
-# -----------------------------
-
-def calculate_model_probability(game):
-
-    pitch = score_pitching(
+def home_team_probability(game):
+    pitching = score_pitching(
         game["home_pitcher"],
         game["away_pitcher"],
     )
@@ -84,87 +93,144 @@ def calculate_model_probability(game):
     )
 
     probability = (
-        pitch * PITCHING_WEIGHT
+        pitching * PITCHING_WEIGHT
         + form * TEAM_FORM_WEIGHT
         + bullpen * BULLPEN_WEIGHT
-        + 0.50 * HOME_FIELD_WEIGHT
+        + 0.53 * HOME_FIELD_WEIGHT
         + 0.50 * MARKET_WEIGHT
     )
 
     return clamp(probability, 0.35, 0.70)
 
 
-# -----------------------------
-# Rank Every Bet
-# -----------------------------
+def get_moneyline_market(game, side):
+    market = game.get("market", {})
+    moneyline = market.get("moneyline", {})
+
+    if side == "home":
+        return moneyline.get("home")
+
+    if side == "away":
+        return moneyline.get("away")
+
+    return None
+
+
+def build_moneyline_pick(game, side, probability):
+    market = get_moneyline_market(game, side)
+
+    if not market:
+        return None
+
+    odds = market.get("odds")
+    book = market.get("book")
+
+    if odds is None:
+        return None
+
+    implied = american_to_implied(odds)
+    edge = probability - implied
+    ev = expected_value(probability, odds)
+
+    team = game["home"] if side == "home" else game["away"]
+
+    opponent = game["away"] if side == "home" else game["home"]
+
+    rationale = (
+        f"Deterministic model using pitching, recent form, bullpen, "
+        f"home field, and best available price. "
+        f"Model sees {team} at {probability:.1%} vs market implied {implied:.1%}. "
+        f"Best price found at {book}. Opponent: {opponent}."
+    )
+
+    return {
+        "date": today_et(),
+        "game": f'{game["away"]} @ {game["home"]}',
+        "pick": team,
+        "bet_type": "Moneyline",
+        "sportsbook": book,
+        "odds": odds,
+        "model_probability": round(probability, 3),
+        "implied_probability": round(implied, 3),
+        "edge": round(edge, 3),
+        "ev": round(ev, 3),
+        "confidence": confidence_from_edge(edge),
+        "best_bet": False,
+        "rationale": rationale,
+    }
+
 
 def rank_picks(feature_set):
-
     picks = []
 
     for game in feature_set:
-
-        market = game["market"]
+        market = game.get("market", {})
 
         if not market:
             continue
 
-        implied = american_to_implied(
-            market["home_odds"]
+        home_prob = home_team_probability(game)
+        away_prob = 1 - home_prob
+
+        home_pick = build_moneyline_pick(
+            game,
+            "home",
+            home_prob,
         )
 
-        probability = calculate_model_probability(game)
-
-        edge = probability - implied
-
-        ev = expected_value(
-            probability,
-            market["home_odds"],
+        away_pick = build_moneyline_pick(
+            game,
+            "away",
+            away_prob,
         )
 
-        picks.append({
+        if home_pick:
+            picks.append(home_pick)
 
-            "date": today_et(),
-
-            "game": f'{game["away"]} @ {game["home"]}',
-
-            "pick": game["home"],
-
-            "bet_type": "Moneyline",
-
-            "sportsbook": market["book"],
-
-            "odds": market["home_odds"],
-
-            "model_probability": round(probability, 3),
-
-            "implied_probability": round(implied, 3),
-
-            "edge": round(edge, 3),
-
-            "ev": round(ev, 3),
-
-            "confidence": confidence_from_edge(edge),
-
-            "best_bet": False,
-
-            "rationale": (
-                "Deterministic model using "
-                "pitching, team form, bullpen, "
-                "home field and market value."
-            ),
-
-        })
+        if away_pick:
+            picks.append(away_pick)
 
     picks.sort(
         key=lambda x: (
             x["ev"],
             x["edge"],
+            x["confidence"],
         ),
         reverse=True,
     )
 
-    if picks:
-        picks[0]["best_bet"] = True
+    final_picks = []
+    used_games = set()
 
-    return picks[:5]
+    for pick in picks:
+        if pick["game"] in used_games:
+            continue
+
+        if pick["ev"] <= 0:
+            continue
+
+        final_picks.append(pick)
+        used_games.add(pick["game"])
+
+        if len(final_picks) == 5:
+            break
+
+    if len(final_picks) < 5:
+        for pick in picks:
+            if pick["game"] in used_games:
+                continue
+
+            final_picks.append(pick)
+            used_games.add(pick["game"])
+
+            if len(final_picks) == 5:
+                break
+
+    if final_picks:
+        final_picks[0]["best_bet"] = True
+        final_picks[0]["rationale"] = (
+            "Best Bet: highest EV from deterministic model. "
+            + final_picks[0]["rationale"]
+        )
+
+    return final_picks
