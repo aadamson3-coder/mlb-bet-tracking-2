@@ -19,16 +19,25 @@ def clamp(value, low, high):
     return max(low, min(high, value))
 
 def confidence_from_edge(edge):
-    if edge >= 0.08:
-        return 5.0
-    if edge >= 0.06:
-        return 4.5
-    if edge >= 0.04:
-        return 4.0
-    if edge >= 0.025:
-        return 3.5
-    if edge >= 0.015:
-        return 3.0
-    if edge >= 0.005:
-        return 2.5
+    if edge >= 0.08: return 5.0
+    if edge >= 0.06: return 4.5
+    if edge >= 0.04: return 4.0
+    if edge >= 0.025: return 3.5
+    if edge >= 0.015: return 3.0
+    if edge >= 0.005: return 2.5
     return 2.0
+
+def parse_ip(ip_value):
+    if ip_value in [None, "", "-.--"]:
+        return 0.0
+    text = str(ip_value)
+    if "." not in text:
+        return float(text)
+    whole, frac = text.split(".", 1)
+    whole = float(whole or 0)
+    if frac == "1": return whole + (1/3)
+    if frac == "2": return whole + (2/3)
+    try:
+        return float(text)
+    except Exception:
+        return whole
