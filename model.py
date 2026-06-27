@@ -54,16 +54,24 @@ def score_team_form(home_form, away_form):
 
 
 def score_bullpen(home_pen, away_pen):
-    score = 0.50
 
-    home_era = safe_float(home_pen.get("bullpen_era"), 3.90)
-    away_era = safe_float(away_pen.get("bullpen_era"), 3.90)
+    home_rating = safe_float(
+        home_pen.get("rating"),
+        50,
+    )
 
-    home_usage = safe_float(home_pen.get("bullpen_usage"), 1)
-    away_usage = safe_float(away_pen.get("bullpen_usage"), 1)
+    away_rating = safe_float(
+        away_pen.get("rating"),
+        50,
+    )
 
-    score += clamp((away_era - home_era) * 0.012, -0.04, 0.04)
-    score += clamp((away_usage - home_usage) * 0.020, -0.04, 0.04)
+    diff = home_rating - away_rating
+
+    score = 0.50 + clamp(
+        diff * 0.003,
+        -0.10,
+        0.10,
+    )
 
     return clamp(score, 0.35, 0.65)
 
