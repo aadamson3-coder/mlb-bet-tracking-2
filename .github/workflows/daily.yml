@@ -1,27 +1,30 @@
-name: Daily MLB Picks
+from mlb_schedule import get_schedule, get_team_records
+from odds import get_odds
+from features import recent_team_form
+from model import make_candidates, choose_top_picks
+from sheets import post_picks
 
-on:
-  workflow_dispatch:
-  schedule:
-    - cron: "0 16 * * *"
 
-jobs:
-  run:
-    runs-on: ubuntu-latest
+def main():
+    schedule = get_schedule()
+    records = get_team_records()
+    recent_form = recent_team_form(days=14)
+    odds_events = get_odds()
 
-    steps:
-      - uses: actions/checkout@v4
+    candidates = make_candidates(
+        odds_events=odds_events,
+        schedule=schedule,
+        records=records,
+        recent_form=recent_form,
+    )
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+    picks = choose_top_picks(candidates, count=5)
 
-      - name: Install dependencies
-        run: python -m pip install --upgrade pip openai requests
+    if len(picks) < 5:
+        raise RuntimeError(f"Only found {len(picks)} picks.")
 
-      - run: python main.py
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          APPS_SCRIPT_URL: ${{ secrets.APPS_SCRIPT_URL }}
-          APPS_SCRIPT_TOKEN: ${{ secrets.APPS_SCRIPT_TOKEN }}
-          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+    post_picks(picks)
+
+
+if __name__ == "__main__":
+    main()
