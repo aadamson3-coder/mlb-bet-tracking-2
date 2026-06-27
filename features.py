@@ -1,42 +1,106 @@
-from datetime import datetime, timedelta
-from config import ET
-from mlb_schedule import get_json
+import requests
 
-def recent_team_form(days=14):
-    end = datetime.now(ET).date()
-    start = end - timedelta(days=days)
-    url = "https://statsapi.mlb.com/api/v1/schedule"
-    params = {"sportId": 1, "startDate": start.strftime("%Y-%m-%d"), "endDate": end.strftime("%Y-%m-%d")}
-    data = get_json(url, params=params)
-    stats = {}
+# -------------------------------
+# Recent Team Form
+# -------------------------------
 
-    for day in data.get("dates", []):
-        for game in day.get("games", []):
-            if game.get("status", {}).get("detailedState") != "Final":
-                continue
-            away = game["teams"]["away"]["team"]["name"]
-            home = game["teams"]["home"]["team"]["name"]
-            away_runs = int(game["teams"]["away"].get("score", 0))
-            home_runs = int(game["teams"]["home"].get("score", 0))
-
-            for team in [away, home]:
-                stats.setdefault(team, {"games": 0, "wins": 0, "run_diff": 0})
-
-            stats[away]["games"] += 1
-            stats[home]["games"] += 1
-            stats[away]["run_diff"] += away_runs - home_runs
-            stats[home]["run_diff"] += home_runs - away_runs
-
-            if away_runs > home_runs:
-                stats[away]["wins"] += 1
-            elif home_runs > away_runs:
-                stats[home]["wins"] += 1
+def calculate_recent_form(team):
+    """
+    Placeholder.
+    Eventually pull:
+      - Last 10 record
+      - Runs scored/game
+      - Runs allowed/game
+      - Home/Road splits
+    """
 
     return {
-        team: {
-            "recent_win_pct": s["wins"] / max(1, s["games"]),
-            "recent_run_diff_per_game": s["run_diff"] / max(1, s["games"]),
-            "recent_games": s["games"],
-        }
-        for team, s in stats.items()
+        "wins_last10": 5,
+        "runs_per_game": 4.5,
+        "runs_allowed": 4.2
     }
+
+
+# -------------------------------
+# Starting Pitcher
+# -------------------------------
+
+def pitcher_features(name):
+    """
+    Placeholder until Statcast/Baseball Savant integration.
+    """
+
+    return {
+        "era": 3.75,
+        "whip": 1.18,
+        "k9": 9.4,
+        "last5_era": 3.30
+    }
+
+
+# -------------------------------
+# Bullpen
+# -------------------------------
+
+def bullpen_features(team):
+    """
+    Placeholder.
+    """
+
+    return {
+        "bullpen_era": 3.85,
+        "bullpen_usage": 1
+    }
+
+
+# -------------------------------
+# Build Feature Set
+# -------------------------------
+
+def build_features(schedule, odds):
+
+    features = []
+
+    for game in schedule:
+
+        home = game["home_team"]
+        away = game["away_team"]
+
+        home_form = calculate_recent_form(home)
+        away_form = calculate_recent_form(away)
+
+        home_pitcher = pitcher_features(
+            game.get("home_pitcher", "")
+        )
+
+        away_pitcher = pitcher_features(
+            game.get("away_pitcher", "")
+        )
+
+        home_pen = bullpen_features(home)
+        away_pen = bullpen_features(away)
+
+        market = odds.get(
+            f"{away}@{home}",
+            {}
+        )
+
+        features.append({
+
+            "home": home,
+            "away": away,
+
+            "home_pitcher": home_pitcher,
+            "away_pitcher": away_pitcher,
+
+            "home_form": home_form,
+            "away_form": away_form,
+
+            "home_bullpen": home_pen,
+            "away_bullpen": away_pen,
+
+            "market": market
+
+        })
+
+    return features
