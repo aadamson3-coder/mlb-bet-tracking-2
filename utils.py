@@ -19,14 +19,16 @@ def clamp(value, low, high):
     return max(low, min(high, value))
 
 def confidence_from_edge(edge):
-    if edge >= 0.040:
+    if edge >= 0.08:
         return 5.0
-    if edge >= 0.030:
+    if edge >= 0.06:
         return 4.5
-    if edge >= 0.020:
+    if edge >= 0.04:
         return 4.0
-    if edge >= 0.015:
+    if edge >= 0.025:
         return 3.5
-    if edge >= 0.010:
+    if edge >= 0.015:
         return 3.0
-    return 2.5
+    if edge >= 0.005:
+        return 2.5
+    return 2.0
