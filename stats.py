@@ -61,3 +61,16 @@ def get_player(player_id):
 def get_game_feed(game_pk):
     url = f"{BASE_URL}/game/{game_pk}/feed/live"
     return get_json(url)
+def get_pitcher_game_log(player_id, season):
+    if not player_id:
+        return {}
+
+    url = f"{BASE_URL}/people/{player_id}/stats"
+
+    params = {
+        "stats": "gameLog",
+        "group": "pitching",
+        "season": season,
+    }
+
+    return get_json(url, params)
