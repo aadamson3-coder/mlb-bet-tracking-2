@@ -1,331 +1,108 @@
-from datetime import datetime
+from datetime import datetime, timedelta
+from config import ET
+from stats import get_pitcher_stats, get_pitcher_game_log, get_recent_games, get_team_stats, get_team_pitching_stats
+from utils import parse_ip
+CURRENT_SEASON = datetime.now(ET).year
 
-from stats import (
-    get_pitcher_stats,
-    get_pitcher_game_log,
-    get_recent_games,
-    get_team_stats,
-)
+def safe_float(value, default):
+    try:
+        if value in [None, "", "-.--"]: return default
+        return float(value)
+    except Exception:
+        return default
 
+def calculate_recent_form(team_id, days=21, max_games=10):
+    end=datetime.now(ET).date(); start=end-timedelta(days=days)
+    games=get_recent_games(team_id, start_date=start.strftime("%Y-%m-%d"), end_date=end.strftime("%Y-%m-%d"))
+    completed=[]
+    for day in games.get("dates",[]):
+        for game in day.get("games",[]):
+            if game.get("status",{}).get("detailedState") == "Final": completed.append(game)
+    completed=completed[-max_games:]
+    wins=losses=runs_scored=runs_allowed=0
+    for game in completed:
+        home=game["teams"]["home"]; away=game["teams"]["away"]
+        if home["team"]["id"] == team_id:
+            scored=int(home.get("score",0)); allowed=int(away.get("score",0))
+        else:
+            scored=int(away.get("score",0)); allowed=int(home.get("score",0))
+        runs_scored += scored; runs_allowed += allowed
+        if scored > allowed: wins += 1
+        else: losses += 1
+    games_played=max(1,wins+losses)
+    return {"wins_last10":wins,"losses_last10":losses,"recent_games":wins+losses,"win_pct":round(wins/games_played,3),"runs_per_game":round(runs_scored/games_played,2),"runs_allowed":round(runs_allowed/games_played,2),"run_diff":round((runs_scored-runs_allowed)/games_played,2)}
 
-CURRENT_SEASON = datetime.now().year
+def pitcher_rating(p):
+    era=safe_float(p.get("era"),4.50); whip=safe_float(p.get("whip"),1.35); k9=safe_float(p.get("k9"),8.0); bb9=safe_float(p.get("bb9"),3.2)
+    last5_era=safe_float(p.get("last5_era"),era); last5_whip=safe_float(p.get("last5_whip"),whip)
+    rating=50
+    rating += (4.50-era)*8 + (1.35-whip)*25 + (k9-8.0)*3 + (3.2-bb9)*4 + (4.50-last5_era)*4 + (1.35-last5_whip)*12
+    return round(max(20,min(100,rating)),1)
 
+def default_pitcher_features():
+    f={"era":4.50,"whip":1.35,"k9":8.0,"bb9":3.2,"last5_era":4.50,"last5_whip":1.35}
+    f["rating"] = pitcher_rating(f)
+    return f
 
-# -------------------------------------------------
-# Team Recent Form
-# -------------------------------------------------
-
-def calculate_recent_form(team_id):
-
-    games = get_recent_games(team_id)
-
-    wins = 0
-    losses = 0
-
-    runs_scored = 0
-    runs_allowed = 0
-
-    for day in games.get("dates", []):
-
-        for game in day.get("games", []):
-
-            if game["status"]["detailedState"] != "Final":
-                continue
-
-            home = game["teams"]["home"]
-            away = game["teams"]["away"]
-
-            if home["team"]["id"] == team_id:
-
-                scored = home["score"]
-                allowed = away["score"]
-
-            else:
-
-                scored = away["score"]
-                allowed = home["score"]
-
-            runs_scored += scored
-            runs_allowed += allowed
-
-            if scored > allowed:
-                wins += 1
-            else:
-                losses += 1
-
-    games_played = max(1, wins + losses)
-
-    return {
-
-        "wins_last10": wins,
-
-        "losses_last10": losses,
-
-        "win_pct": round(wins / games_played, 3),
-
-        "runs_per_game":
-            round(runs_scored / games_played, 2),
-
-        "runs_allowed":
-            round(runs_allowed / games_played, 2),
-
-        "run_diff":
-            round(
-                (runs_scored - runs_allowed)
-                / games_played,
-                2
-            )
-
-    }
-
-
-# -------------------------------------------------
-# Starting Pitcher
-# -------------------------------------------------
+def pitcher_last5(player_id, fallback_era, fallback_whip):
+    try:
+        logs=get_pitcher_game_log(player_id, CURRENT_SEASON); splits=logs["stats"][0].get("splits",[])[:5]
+        innings=earned_runs=walks_hits=0.0
+        for game in splits:
+            stat=game.get("stat",{}); ip=parse_ip(stat.get("inningsPitched",0))
+            earned_runs += safe_float(stat.get("earnedRuns"),0); walks_hits += safe_float(stat.get("hits"),0)+safe_float(stat.get("baseOnBalls"),0); innings += ip
+        if innings > 0: return (earned_runs*9)/innings, walks_hits/innings
+    except Exception: pass
+    return fallback_era, fallback_whip
 
 def pitcher_features(player_id):
-    if not player_id:
-        return {
-            "era": 4.50,
-            "whip": 1.35,
-            "k9": 8.0,
-            "bb9": 3.2,
-            "last5_era": 4.50,
-            "last5_whip": 1.35,
-            
-        }
-         def pitcher_rating(p):
-    era = float(p.get("era", 4.50))
-    whip = float(p.get("whip", 1.35))
-    k9 = float(p.get("k9", 8.0))
-    bb9 = float(p.get("bb9", 3.2))
-    last5_era = float(p.get("last5_era", era))
-    last5_whip = float(p.get("last5_whip", whip))
-
-    rating = 50
-
-    rating += (4.50 - era) * 8
-    rating += (1.35 - whip) * 25
-    rating += (k9 - 8.0) * 3
-    rating += (3.2 - bb9) * 4
-    rating += (4.50 - last5_era) * 4
-    rating += (1.35 - last5_whip) * 12
-
-    return round(max(20, min(100, rating)), 1)
-
-    stats = get_pitcher_stats(player_id, CURRENT_SEASON)
-
+    if not player_id: return default_pitcher_features()
     try:
-        split = stats["stats"][0]["splits"][0]["stat"]
-
-        era = float(split.get("era", 4.50))
-        whip = float(split.get("whip", 1.35))
-        k9 = float(split.get("strikeoutsPer9Inn", 8.0))
-        bb9 = float(split.get("walksPer9Inn", 3.2))
-
+        stats=get_pitcher_stats(player_id, CURRENT_SEASON); split=stats["stats"][0]["splits"][0]["stat"]
+        era=safe_float(split.get("era"),4.50); whip=safe_float(split.get("whip"),1.35); k9=safe_float(split.get("strikeoutsPer9Inn"),8.0); bb9=safe_float(split.get("walksPer9Inn"),3.2)
     except Exception:
-        era = 4.50
-        whip = 1.35
-        k9 = 8.0
-        bb9 = 3.2
-
-    # Last 5 starts / appearances
-    try:
-        from stats import get_pitcher_game_log
-
-        logs = get_pitcher_game_log(player_id, CURRENT_SEASON)
-        splits = logs["stats"][0]["splits"][:5]
-
-        innings = 0
-        earned_runs = 0
-        walks_hits = 0
-
-        for game in splits:
-            stat = game["stat"]
-
-            ip = float(stat.get("inningsPitched", 0).replace(".1", ".333").replace(".2", ".667"))
-            er = float(stat.get("earnedRuns", 0))
-            hits = float(stat.get("hits", 0))
-            walks = float(stat.get("baseOnBalls", 0))
-
-            innings += ip
-            earned_runs += er
-            walks_hits += hits + walks
-
-        if innings > 0:
-            last5_era = (earned_runs * 9) / innings
-            last5_whip = walks_hits / innings
-        else:
-            last5_era = era
-            last5_whip = whip
-
-    except Exception:
-        last5_era = era
-        last5_whip = whip
-
-    return {
-    "era": era,
-    "whip": whip,
-    "k9": k9,
-    "bb9": bb9,
-    "last5_era": round(last5_era, 2),
-    "last5_whip": round(last5_whip, 2),
-    "rating": pitcher_rating({
-        "era": era,
-        "whip": whip,
-        "k9": k9,
-        "bb9": bb9,
-        "last5_era": last5_era,
-        "last5_whip": last5_whip,
-}
-        
-
-
-# -------------------------------------------------
-# Team Season Stats
-# -------------------------------------------------
+        era=4.50; whip=1.35; k9=8.0; bb9=3.2
+    last5_era,last5_whip=pitcher_last5(player_id, era, whip)
+    f={"era":era,"whip":whip,"k9":k9,"bb9":bb9,"last5_era":round(last5_era,2),"last5_whip":round(last5_whip,2)}
+    f["rating"] = pitcher_rating(f)
+    return f
 
 def season_team_stats(team_id):
-
-    stats = get_team_stats(
-        team_id,
-        CURRENT_SEASON,
-    )
-
     try:
+        stats=get_team_stats(team_id, CURRENT_SEASON); split=stats["stats"][0]["splits"][0]["stat"]
+        return {"runs":safe_float(split.get("runs"),0),"hits":safe_float(split.get("hits"),0),"ops":safe_float(split.get("ops"),0.700),"avg":safe_float(split.get("avg"),0.240),"obp":safe_float(split.get("obp"),0.310),"slg":safe_float(split.get("slg"),0.390)}
+    except Exception:
+        return {"runs":0,"hits":0,"ops":0.700,"avg":0.240,"obp":0.310,"slg":0.390}
 
-        split = stats["stats"][0]["splits"][0]["stat"]
+def bullpen_rating(era, whip, usage):
+    rating=50 + (4.20-era)*10 + (1.35-whip)*30 - usage*1.5
+    return round(max(20,min(100,rating)),1)
 
-        return {
-
-            "runs":
-
-                float(split.get("runs", 0)),
-
-            "hits":
-
-                float(split.get("hits", 0)),
-
-            "ops":
-
-                float(split.get("ops", .700))
-
-        }
-
-    except:
-
-        return {
-
-            "runs": 0,
-
-            "hits": 0,
-
-            "ops": .700
-
-        }
-
-
-# -------------------------------------------------
-# Bullpen
-# -------------------------------------------------
-
-from stats import get_team_pitching_stats
-
-def bullpen_rating(era, whip):
-    rating = 50
-
-    rating += (4.20 - era) * 10
-    rating += (1.35 - whip) * 30
-
-    return round(max(20, min(100, rating)), 1)
-
+def bullpen_usage_last3(team_id):
+    end=datetime.now(ET).date(); start=end-timedelta(days=3)
+    try:
+        games=get_recent_games(team_id, start_date=start.strftime("%Y-%m-%d"), end_date=end.strftime("%Y-%m-%d"))
+        usage=0
+        for day in games.get("dates",[]):
+            for game in day.get("games",[]):
+                if game.get("status",{}).get("detailedState") == "Final": usage += 1
+        return usage
+    except Exception:
+        return 0
 
 def bullpen_features(team_id):
-
     try:
-        stats = get_team_pitching_stats(
-            team_id,
-            CURRENT_SEASON,
-        )
-
-        split = stats["stats"][0]["splits"][0]["stat"]
-
-        era = float(split.get("era", 4.20))
-        whip = float(split.get("whip", 1.35))
-
+        stats=get_team_pitching_stats(team_id, CURRENT_SEASON); split=stats["stats"][0]["splits"][0]["stat"]
+        era=safe_float(split.get("era"),4.20); whip=safe_float(split.get("whip"),1.35)
     except Exception:
-
-        era = 4.20
-        whip = 1.35
-
-    return {
-
-        "bullpen_era": era,
-
-        "bullpen_whip": whip,
-
-        "bullpen_usage": 0,
-
-        "rating": bullpen_rating(
-            era,
-            whip
-        )
-
-    }
-
-# -------------------------------------------------
-# Feature Builder
-# -------------------------------------------------
+        era=4.20; whip=1.35
+    usage=bullpen_usage_last3(team_id)
+    return {"bullpen_era":era,"bullpen_whip":whip,"bullpen_usage":usage,"rating":bullpen_rating(era,whip,usage)}
 
 def build_features(schedule):
-
-    features = []
-
+    features=[]
     for game in schedule:
-
-        home = game["home"]
-        away = game["away"]
-
-        home_id = game["home_id"]
-        away_id = game["away_id"]
-
-        features.append({
-
-            "home": home,
-
-            "away": away,
-
-            "home_form":
-                calculate_recent_form(home_id),
-
-            "away_form":
-                calculate_recent_form(away_id),
-
-            "home_pitcher":
-                pitcher_features(
-                    game["home_pitcher_id"]
-                ),
-
-            "away_pitcher":
-                pitcher_features(
-                    game["away_pitcher_id"]
-                ),
-
-            "home_team":
-                season_team_stats(home_id),
-
-            "away_team":
-                season_team_stats(away_id),
-
-            "home_bullpen":
-                bullpen_features(home_id),
-
-            "away_bullpen":
-                bullpen_features(away_id),
-
-            "market":
-                game["market"]
-
-        })
-
+        home_id=game["home_id"]; away_id=game["away_id"]
+        features.append({"home":game["home"],"away":game["away"],"home_form":calculate_recent_form(home_id),"away_form":calculate_recent_form(away_id),"home_pitcher":pitcher_features(game.get("home_pitcher_id")),"away_pitcher":pitcher_features(game.get("away_pitcher_id")),"home_team":season_team_stats(home_id),"away_team":season_team_stats(away_id),"home_bullpen":bullpen_features(home_id),"away_bullpen":bullpen_features(away_id),"market":game.get("market",{})})
     return features
+
