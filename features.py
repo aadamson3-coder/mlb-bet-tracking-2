@@ -92,7 +92,26 @@ def pitcher_features(player_id):
             "bb9": 3.2,
             "last5_era": 4.50,
             "last5_whip": 1.35,
+            
         }
+         def pitcher_rating(p):
+    era = float(p.get("era", 4.50))
+    whip = float(p.get("whip", 1.35))
+    k9 = float(p.get("k9", 8.0))
+    bb9 = float(p.get("bb9", 3.2))
+    last5_era = float(p.get("last5_era", era))
+    last5_whip = float(p.get("last5_whip", whip))
+
+    rating = 50
+
+    rating += (4.50 - era) * 8
+    rating += (1.35 - whip) * 25
+    rating += (k9 - 8.0) * 3
+    rating += (3.2 - bb9) * 4
+    rating += (4.50 - last5_era) * 4
+    rating += (1.35 - last5_whip) * 12
+
+    return round(max(20, min(100, rating)), 1)
 
     stats = get_pitcher_stats(player_id, CURRENT_SEASON)
 
@@ -145,13 +164,22 @@ def pitcher_features(player_id):
         last5_whip = whip
 
     return {
+    "era": era,
+    "whip": whip,
+    "k9": k9,
+    "bb9": bb9,
+    "last5_era": round(last5_era, 2),
+    "last5_whip": round(last5_whip, 2),
+    "rating": pitcher_rating({
         "era": era,
         "whip": whip,
         "k9": k9,
         "bb9": bb9,
-        "last5_era": round(last5_era, 2),
-        "last5_whip": round(last5_whip, 2),
-    }
+        "last5_era": last5_era,
+        "last5_whip": last5_whip,
+}
+        
+
 
 # -------------------------------------------------
 # Team Season Stats
