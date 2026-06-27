@@ -24,32 +24,12 @@ def safe_float(value, default):
 
 
 def score_pitching(home_pitcher, away_pitcher):
-    score = 0.50
+    home_rating = safe_float(home_pitcher.get("rating"), 50)
+    away_rating = safe_float(away_pitcher.get("rating"), 50)
 
-    home_era = safe_float(home_pitcher.get("era"), 4.50)
-    away_era = safe_float(away_pitcher.get("era"), 4.50)
+    rating_diff = home_rating - away_rating
 
-    home_whip = safe_float(home_pitcher.get("whip"), 1.35)
-    away_whip = safe_float(away_pitcher.get("whip"), 1.35)
-
-    home_k9 = safe_float(home_pitcher.get("k9"), 8.0)
-    away_k9 = safe_float(away_pitcher.get("k9"), 8.0)
-
-    home_bb9 = safe_float(home_pitcher.get("bb9"), 3.2)
-    away_bb9 = safe_float(away_pitcher.get("bb9"), 3.2)
-
-    home_last5_era = safe_float(home_pitcher.get("last5_era"), home_era)
-    away_last5_era = safe_float(away_pitcher.get("last5_era"), away_era)
-
-    home_last5_whip = safe_float(home_pitcher.get("last5_whip"), home_whip)
-    away_last5_whip = safe_float(away_pitcher.get("last5_whip"), away_whip)
-
-    score += clamp((away_era - home_era) * 0.014, -0.05, 0.05)
-    score += clamp((away_whip - home_whip) * 0.060, -0.04, 0.04)
-    score += clamp((home_k9 - away_k9) * 0.007, -0.03, 0.03)
-    score += clamp((away_bb9 - home_bb9) * 0.008, -0.025, 0.025)
-    score += clamp((away_last5_era - home_last5_era) * 0.010, -0.04, 0.04)
-    score += clamp((away_last5_whip - home_last5_whip) * 0.050, -0.03, 0.03)
+    score = 0.50 + clamp(rating_diff * 0.003, -0.12, 0.12)
 
     return clamp(score, 0.32, 0.68)
 
