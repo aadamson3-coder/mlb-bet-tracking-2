@@ -229,24 +229,49 @@ def season_team_stats(team_id):
 # Bullpen
 # -------------------------------------------------
 
+from stats import get_team_pitching_stats
+
+def bullpen_rating(era, whip):
+    rating = 50
+
+    rating += (4.20 - era) * 10
+    rating += (1.35 - whip) * 30
+
+    return round(max(20, min(100, rating)), 1)
+
+
 def bullpen_features(team_id):
 
-    """
-    Placeholder.
+    try:
+        stats = get_team_pitching_stats(
+            team_id,
+            CURRENT_SEASON,
+        )
 
-    We'll replace this with
-    bullpen usage over
-    previous 3 days.
-    """
+        split = stats["stats"][0]["splits"][0]["stat"]
+
+        era = float(split.get("era", 4.20))
+        whip = float(split.get("whip", 1.35))
+
+    except Exception:
+
+        era = 4.20
+        whip = 1.35
 
     return {
 
-        "bullpen_era": 3.90,
+        "bullpen_era": era,
 
-        "bullpen_usage": 1
+        "bullpen_whip": whip,
+
+        "bullpen_usage": 0,
+
+        "rating": bullpen_rating(
+            era,
+            whip
+        )
 
     }
-
 
 # -------------------------------------------------
 # Feature Builder
