@@ -8,7 +8,7 @@ APPS_SCRIPT_TOKEN = os.environ["APPS_SCRIPT_TOKEN"]
 ODDS_API_KEY = os.environ["ODDS_API_KEY"]
 
 ET = ZoneInfo("America/New_York")
-BOOKS = ["draftkings", "betmgm", "fanduel", "fanatics"]
+BOOKS = ["draftkings", "betmgm", "fanatics"]
 MARKETS = "h2h,spreads,totals"
 
 
