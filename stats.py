@@ -74,3 +74,26 @@ def get_pitcher_game_log(player_id, season):
     }
 
     return get_json(url, params)
+
+def get_team_pitching_stats(team_id, season):
+    url = f"{BASE_URL}/teams/{team_id}/stats"
+
+    params = {
+        "stats": "season",
+        "group": "pitching",
+        "season": season,
+    }
+
+    return get_json(url, params)
+
+
+def get_team_game_log(team_id, season):
+    url = f"{BASE_URL}/schedule"
+
+    params = {
+        "sportId": 1,
+        "teamId": team_id,
+        "season": season,
+    }
+
+    return get_json(url, params)
