@@ -2,6 +2,7 @@ from datetime import datetime
 
 from stats import (
     get_pitcher_stats,
+    get_pitcher_game_log,
     get_recent_games,
     get_team_stats,
 )
@@ -83,41 +84,74 @@ def calculate_recent_form(team_id):
 # -------------------------------------------------
 
 def pitcher_features(player_id):
+    if not player_id:
+        return {
+            "era": 4.50,
+            "whip": 1.35,
+            "k9": 8.0,
+            "bb9": 3.2,
+            "last5_era": 4.50,
+            "last5_whip": 1.35,
+        }
 
-    stats = get_pitcher_stats(
-        player_id,
-        CURRENT_SEASON,
-    )
+    stats = get_pitcher_stats(player_id, CURRENT_SEASON)
 
     try:
-
         split = stats["stats"][0]["splits"][0]["stat"]
 
-        return {
+        era = float(split.get("era", 4.50))
+        whip = float(split.get("whip", 1.35))
+        k9 = float(split.get("strikeoutsPer9Inn", 8.0))
+        bb9 = float(split.get("walksPer9Inn", 3.2))
 
-            "era":
-                float(split.get("era", 4.50)),
+    except Exception:
+        era = 4.50
+        whip = 1.35
+        k9 = 8.0
+        bb9 = 3.2
 
-            "whip":
-                float(split.get("whip", 1.35)),
+    # Last 5 starts / appearances
+    try:
+        from stats import get_pitcher_game_log
 
-            "k9":
-                float(split.get("strikeoutsPer9Inn", 8.0))
+        logs = get_pitcher_game_log(player_id, CURRENT_SEASON)
+        splits = logs["stats"][0]["splits"][:5]
 
-        }
+        innings = 0
+        earned_runs = 0
+        walks_hits = 0
 
-    except:
+        for game in splits:
+            stat = game["stat"]
 
-        return {
+            ip = float(stat.get("inningsPitched", 0).replace(".1", ".333").replace(".2", ".667"))
+            er = float(stat.get("earnedRuns", 0))
+            hits = float(stat.get("hits", 0))
+            walks = float(stat.get("baseOnBalls", 0))
 
-            "era": 4.50,
+            innings += ip
+            earned_runs += er
+            walks_hits += hits + walks
 
-            "whip": 1.35,
+        if innings > 0:
+            last5_era = (earned_runs * 9) / innings
+            last5_whip = walks_hits / innings
+        else:
+            last5_era = era
+            last5_whip = whip
 
-            "k9": 8.0
+    except Exception:
+        last5_era = era
+        last5_whip = whip
 
-        }
-
+    return {
+        "era": era,
+        "whip": whip,
+        "k9": k9,
+        "bb9": bb9,
+        "last5_era": round(last5_era, 2),
+        "last5_whip": round(last5_whip, 2),
+    }
 
 # -------------------------------------------------
 # Team Season Stats
