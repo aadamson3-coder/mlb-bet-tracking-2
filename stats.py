@@ -35,3 +35,17 @@ def get_player(player_id):
 
 def get_game_feed(game_pk):
     return get_json(f"{BASE_URL}/game/{game_pk}/feed/live")
+def get_team_hitting_splits(team_id, season, pitcher_hand):
+    # pitcher_hand should be "L" or "R"
+    sit_code = "vl" if pitcher_hand == "L" else "vr"
+
+    url = f"{BASE_URL}/teams/{team_id}/stats"
+
+    params = {
+        "stats": "statSplits",
+        "group": "hitting",
+        "season": season,
+        "sitCodes": sit_code,
+    }
+
+    return get_json(url, params)
