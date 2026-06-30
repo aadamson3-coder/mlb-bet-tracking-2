@@ -105,4 +105,5 @@ def build_features(schedule):
         home_id=game["home_id"]; away_id=game["away_id"]
         features.append({"home":game["home"],"away":game["away"],"home_form":calculate_recent_form(home_id),"away_form":calculate_recent_form(away_id),"home_pitcher":pitcher_features(game.get("home_pitcher_id")),"away_pitcher":pitcher_features(game.get("away_pitcher_id")),"home_team":season_team_stats(home_id),"away_team":season_team_stats(away_id),"home_bullpen":bullpen_features(home_id),"away_bullpen":bullpen_features(away_id),"market":game.get("market",{})})
     return features
-
+    
+from stats import get_team_hitting_splits, get_player
