@@ -107,3 +107,51 @@ def build_features(schedule):
     return features
     
 from stats import get_team_hitting_splits, get_player
+
+def get_pitcher_hand(player_id):
+    if not player_id:
+        return "R"
+
+    try:
+        data = get_player(player_id)
+        person = data["people"][0]
+        return person.get("pitchHand", {}).get("code", "R")
+    except Exception:
+        return "R"
+
+
+def offense_rating_from_ops(ops):
+    rating = 50
+    rating += (ops - 0.700) * 120
+    return round(max(20, min(100, rating)), 1)
+
+
+def offense_features(team_id, opposing_pitcher_hand):
+    try:
+        stats = get_team_hitting_splits(
+            team_id,
+            CURRENT_SEASON,
+            opposing_pitcher_hand,
+        )
+
+        split = stats["stats"][0]["splits"][0]["stat"]
+
+        ops = safe_float(split.get("ops"), 0.700)
+        avg = safe_float(split.get("avg"), 0.240)
+        obp = safe_float(split.get("obp"), 0.310)
+        slg = safe_float(split.get("slg"), 0.390)
+
+    except Exception:
+        ops = 0.700
+        avg = 0.240
+        obp = 0.310
+        slg = 0.390
+
+    return {
+        "ops_vs_hand": ops,
+        "avg_vs_hand": avg,
+        "obp_vs_hand": obp,
+        "slg_vs_hand": slg,
+        "opposing_pitcher_hand": opposing_pitcher_hand,
+        "rating": offense_rating_from_ops(ops),
+    }
