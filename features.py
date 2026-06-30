@@ -99,6 +99,13 @@ def bullpen_features(team_id):
     usage=bullpen_usage_last3(team_id)
     return {"bullpen_era":era,"bullpen_whip":whip,"bullpen_usage":usage,"rating":bullpen_rating(era,whip,usage)}
 
+home_pitcher_hand = get_pitcher_hand(game.get("home_pitcher_id"))
+away_pitcher_hand = get_pitcher_hand(game.get("away_pitcher_id"))
+
+home_offense = offense_features(home_id, away_pitcher_hand)
+away_offense = offense_features(away_id, home_pitcher_hand)
+
+
 def build_features(schedule):
     features=[]
     for game in schedule:
