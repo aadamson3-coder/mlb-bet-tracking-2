@@ -80,6 +80,7 @@ def build_moneyline_pick(game, side, probability):
         return None
 
     implied = american_to_implied(odds)
+    probability = (probability * 0.65) + (implied * 0.35)
     edge = probability - implied
     ev = expected_value(probability, odds)
     fair_odds = probability_to_american(probability)
